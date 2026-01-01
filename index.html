@@ -1,0 +1,1308 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>iPad Teleprompter Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg-start: #f0f4ff;
+      --bg-end: #ffffff;
+      --ink: #0f172a;
+      --muted: #53627a;
+      --surface: rgba(255, 255, 255, 0.92);
+      --surface-soft: rgba(255, 255, 255, 0.65);
+      --accent: #f97316;
+      --accent-strong: #ea580c;
+      --error: #dc2626;
+      --border: rgba(15, 23, 42, 0.1);
+      --shadow: 0 25px 60px rgba(15, 23, 42, 0.2);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Space Grotesk", sans-serif;
+      height: 100vh;
+      overflow: hidden;
+      background: linear-gradient(160deg, var(--bg-start), var(--bg-end));
+      color: var(--ink);
+    }
+
+    .canvas {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    .camera-feed {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .canvas::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, rgba(0, 0, 0, 0.1) 0%, rgba(0, 0, 0, 0.25) 100%);
+      pointer-events: none;
+    }
+
+    .teleprompter {
+      position: absolute;
+      top: 3vh;
+      left: 50%;
+      transform: translateX(-50%);
+      width: min(900px, 92%);
+      height: 40vh;
+      padding: clamp(1rem, 2vw, 1.5rem);
+      background: var(--surface-soft);
+      border-radius: 1.25rem;
+      border: 1px solid rgba(255, 255, 255, 0.6);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      backdrop-filter: blur(18px);
+    }
+
+    .teleprompter-inner {
+      will-change: transform;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      font-size: clamp(1.2rem, 2.5vw, 2rem);
+      line-height: 1.4;
+      color: var(--ink);
+      padding-bottom: 35vh;
+    }
+
+    .teleprompter p {
+      margin: 0;
+    }
+
+    .teleprompter.mirrored {
+      transform: translateX(-50%) scaleX(-1);
+    }
+
+    .teleprompter.mirrored .teleprompter-inner {
+      transform: scaleX(-1);
+    }
+
+    .control-dock {
+      position: absolute;
+      left: 50%;
+      bottom: 0;
+      transform: translateX(-50%);
+      width: min(1100px, 94%);
+      background: var(--surface);
+      border-radius: 2rem 2rem 0 0;
+      box-shadow: var(--shadow);
+      padding: 1.75rem clamp(1rem, 4vw, 2.5rem) 2rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      z-index: 2;
+      transition: width 200ms ease, padding 200ms ease, border-radius 200ms ease;
+    }
+
+    .control-dock.collapsed {
+      width: min(420px, 92%);
+      padding: 0.75rem 1.5rem 1rem;
+      border-radius: 999px 999px 0 0;
+      background: rgba(255, 255, 255, 0.85);
+      gap: 0.5rem;
+    }
+
+    .dock-toggle {
+      border: none;
+      background: transparent;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent-strong);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0;
+    }
+
+    .dock-toggle-label {
+      font-size: 0.85rem;
+    }
+
+    .dock-toggle-icon {
+      transition: transform 160ms ease;
+      font-size: 1rem;
+      margin-left: 0.5rem;
+    }
+
+    .control-dock.collapsed .dock-toggle-icon {
+      transform: rotate(180deg);
+    }
+
+    .dock-body {
+      display: flex;
+      flex-direction: column;
+      gap: 1.2rem;
+    }
+
+    .control-dock.collapsed .dock-body {
+      display: none;
+    }
+
+    .countdown-overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: clamp(4rem, 12vw, 8rem);
+      font-weight: 600;
+      color: #ffffff;
+      text-shadow: 0 15px 45px rgba(15, 23, 42, 0.45);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 160ms ease;
+      z-index: 3;
+    }
+
+    .countdown-overlay.visible {
+      opacity: 1;
+    }
+
+    .timestamp {
+      font-size: 0.9rem;
+      color: var(--muted);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .status-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 1rem;
+      color: var(--ink);
+    }
+
+    .badge {
+      padding: 0.35rem 1rem;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+    }
+
+    .badge.recording {
+      border-color: var(--error);
+      color: var(--error);
+    }
+
+    .button-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 0.75rem;
+    }
+
+    button,
+    .ghost-button {
+      border: 1px solid rgba(15, 23, 42, 0.15);
+      background: rgba(255, 255, 255, 0.6);
+      color: var(--ink);
+      font-weight: 600;
+      border-radius: 999px;
+      padding: 0.85rem 1.1rem;
+      font-family: inherit;
+      cursor: pointer;
+      transition: transform 160ms ease, border-color 160ms ease;
+      text-align: center;
+      text-decoration: none;
+      display: inline-flex;
+      justify-content: center;
+    }
+
+    button.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    button.danger {
+      background: rgba(220, 38, 38, 0.1);
+      border-color: rgba(220, 38, 38, 0.4);
+      color: var(--error);
+    }
+
+    button:disabled,
+    .ghost-button.disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
+
+    button:hover:not(:disabled),
+    .ghost-button:not(.disabled):hover {
+      transform: translateY(-1px);
+      border-color: var(--accent-strong);
+    }
+
+    .layout-split {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    .script-editor {
+      flex: 1 1 320px;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 300px;
+      max-height: 400px;
+      border-radius: 1rem;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.8);
+      color: var(--ink);
+      padding: 1rem;
+      resize: vertical;
+      font-size: 1rem;
+      font-family: inherit;
+      line-height: 1.5;
+      box-shadow: inset 0 1px 3px rgba(15, 23, 42, 0.08);
+      overflow-y: auto;
+    }
+
+    .prompt-controls {
+      flex: 1 1 220px;
+      display: grid;
+      gap: 0.75rem;
+    }
+
+    label {
+      font-size: 0.85rem;
+      color: var(--muted);
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+
+    input[type="range"] {
+      width: 100%;
+    }
+
+    .hint {
+      color: var(--muted);
+      font-size: 0.95rem;
+      margin: 0;
+    }
+
+    .recording-timer-overlay {
+      position: absolute;
+      top: 1.5rem;
+      right: 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.6rem 1.2rem;
+      background: rgba(0, 0, 0, 0.7);
+      border-radius: 999px;
+      z-index: 10;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 200ms ease;
+    }
+
+    .recording-timer-overlay.visible {
+      opacity: 1;
+    }
+
+    .recording-timer-overlay .rec-dot {
+      width: 12px;
+      height: 12px;
+      background: #ef4444;
+      border-radius: 50%;
+      animation: pulse-dot 1s ease-in-out infinite;
+    }
+
+    @keyframes pulse-dot {
+
+      0%,
+      100% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.4;
+      }
+    }
+
+    .recording-timer-overlay .rec-time {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #ffffff;
+      font-variant-numeric: tabular-nums;
+    }
+
+    @media (max-width: 640px) {
+      .teleprompter {
+        top: 3vh;
+        max-height: 60vh;
+      }
+
+      .control-dock {
+        border-radius: 1.5rem 1.5rem 0 0;
+      }
+    }
+
+    /* Preview Modal */
+    /* Floating stop recording button */
+    .floating-stop-btn {
+      position: fixed;
+      bottom: 4rem;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 0.85rem 1.75rem;
+      background: var(--error);
+      color: #fff;
+      border: none;
+      border-radius: 999px;
+      font-size: 1rem;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      z-index: 20;
+      box-shadow: 0 8px 25px rgba(220, 38, 38, 0.4);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 200ms ease, transform 200ms ease;
+    }
+
+    .floating-stop-btn.visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .floating-stop-btn:hover {
+      transform: translateX(-50%) scale(1.05);
+    }
+
+    .preview-modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.85);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 200ms ease;
+    }
+
+    .preview-modal.visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .preview-container {
+      width: min(90%, 600px);
+      background: var(--surface);
+      border-radius: 1.5rem;
+      overflow: hidden;
+      box-shadow: 0 25px 80px rgba(0, 0, 0, 0.5);
+    }
+
+    .preview-header {
+      padding: 1rem 1.5rem;
+      background: rgba(0, 0, 0, 0.1);
+      font-weight: 600;
+      font-size: 1.1rem;
+      text-align: center;
+    }
+
+    .preview-video-wrap {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      background: #000;
+    }
+
+    .preview-video-wrap video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .preview-script {
+      padding: 1rem 1.5rem;
+      max-height: 120px;
+      overflow-y: auto;
+      font-size: 0.95rem;
+      color: var(--muted);
+      background: rgba(0, 0, 0, 0.05);
+      border-top: 1px solid var(--border);
+    }
+
+    .preview-script strong {
+      color: var(--ink);
+    }
+
+    .preview-buttons {
+      display: flex;
+      gap: 0.75rem;
+      padding: 1rem 1.5rem;
+    }
+
+    .preview-buttons button {
+      flex: 1;
+    }
+
+    /* Small camera preview (picture-in-picture) in dock */
+    .pip-camera {
+      width: 160px;
+      height: 90px;
+      border-radius: 0.75rem;
+      overflow: hidden;
+      background: #000;
+      border: 2px solid var(--accent);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    }
+
+    .pip-camera video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .pip-camera.hidden {
+      display: none;
+    }
+
+    .status-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 1rem;
+      color: var(--ink);
+      gap: 1rem;
+    }
+
+    /* Mobile phone specific styles (max-width 480px targets phones, not iPads) */
+    @media (max-width: 480px) {
+      .teleprompter {
+        top: 1vh;
+        width: 98%;
+        height: 35vh;
+        padding: 0.5rem;
+        border-radius: 0.75rem;
+        background: rgba(255, 255, 255, 0.9);
+      }
+
+      .teleprompter-inner {
+        font-size: 1.1rem;
+        line-height: 1.3;
+        gap: 0.6rem;
+        padding-bottom: 30vh;
+      }
+
+      .floating-stop-btn {
+        bottom: 3.5rem;
+        padding: 0.65rem 1.25rem;
+        font-size: 0.85rem;
+      }
+
+      .control-dock {
+        width: 100%;
+        border-radius: 1.25rem 1.25rem 0 0;
+        padding: 1rem;
+        max-height: 60vh;
+        overflow-y: auto;
+      }
+
+      .control-dock.collapsed {
+        width: 100%;
+        padding: 0.5rem 1rem;
+      }
+
+      .button-row {
+        grid-template-columns: 1fr 1fr;
+        gap: 0.5rem;
+      }
+
+      button,
+      .ghost-button {
+        padding: 0.7rem 0.6rem;
+        font-size: 0.8rem;
+      }
+
+      .layout-split {
+        flex-direction: column;
+      }
+
+      .script-editor {
+        flex: 1 1 auto;
+      }
+
+      textarea {
+        min-height: 100px;
+        max-height: 150px;
+        font-size: 0.9rem;
+      }
+
+      .prompt-controls {
+        flex-direction: row;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+      }
+
+      .prompt-controls button {
+        flex: 1 1 45%;
+      }
+
+      .pip-camera {
+        width: 100px;
+        height: 56px;
+      }
+
+      .status-bar {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        font-size: 0.85rem;
+      }
+
+      .recording-timer-overlay {
+        top: 0.75rem;
+        right: 0.75rem;
+        padding: 0.4rem 0.8rem;
+        gap: 0.4rem;
+      }
+
+      .recording-timer-overlay .rec-time {
+        font-size: 0.9rem;
+      }
+
+      .recording-timer-overlay .rec-dot {
+        width: 8px;
+        height: 8px;
+      }
+
+      .preview-container {
+        width: 95%;
+      }
+
+      .preview-video-wrap {
+        aspect-ratio: 4 / 3;
+      }
+
+      .preview-script {
+        max-height: 80px;
+        font-size: 0.85rem;
+      }
+
+      .countdown-overlay {
+        font-size: 3rem;
+      }
+
+      .hint {
+        font-size: 0.8rem;
+      }
+
+      .timestamp {
+        font-size: 0.75rem;
+      }
+    }
+
+    /* Language toggle button */
+    .lang-toggle {
+      position: absolute;
+      top: 1rem;
+      left: 1rem;
+      padding: 0.5rem 1rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      z-index: 15;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      transition: background 150ms ease;
+    }
+
+    .lang-toggle:hover {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+
+    @media (max-width: 480px) {
+      .lang-toggle {
+        top: 0.5rem;
+        left: 0.5rem;
+        padding: 0.4rem 0.75rem;
+        font-size: 0.75rem;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="canvas">
+    <video id="cameraPreview" class="camera-feed" autoplay playsinline muted></video>
+
+    <!-- Language toggle button -->
+    <button class="lang-toggle" id="langToggle">EN / 中文</button>
+
+    <!-- Recording timer overlay -->
+    <div class="recording-timer-overlay" id="recordingTimerOverlay">
+      <span class="rec-dot"></span>
+      <span class="rec-time" id="recTime">00:00</span>
+    </div>
+
+    <div class="teleprompter" id="teleprompter">
+      <div class="teleprompter-inner" id="teleprompterText"></div>
+    </div>
+
+    <div class="countdown-overlay" id="countdown"></div>
+
+    <!-- Floating stop recording button (visible during recording) -->
+    <button class="floating-stop-btn" id="floatingStopBtn">⏹ Stop Recording</button>
+
+    <div class="control-dock collapsed" id="controlDock">
+      <button class="dock-toggle" id="dockToggle" aria-expanded="false">
+        <span class="dock-toggle-label">Show controls</span>
+        <span class="dock-toggle-icon" aria-hidden="true">▴</span>
+      </button>
+      <div class="dock-body">
+        <div class="status-bar">
+          <span>Timer: <strong id="timer">00:00</strong></span>
+          <!-- Small camera preview -->
+          <div class="pip-camera hidden" id="pipCamera">
+            <video id="pipVideo" autoplay playsinline muted></video>
+          </div>
+          <span class="badge" id="statusBadge">Standby</span>
+        </div>
+        <div class="button-row">
+          <button id="startCamera" class="primary">Start camera</button>
+          <button id="flipCamera">Flip camera</button>
+          <button id="recordBtn" class="primary" disabled>Start recording</button>
+          <button id="stopRecordBtn" class="danger" disabled>Stop recording</button>
+          <a id="downloadRecording" class="ghost-button disabled" role="button" aria-disabled="true">Download clip</a>
+          <button id="shareBtn" class="ghost-button disabled" disabled>Share video</button>
+        </div>
+        <div class="layout-split">
+          <div class="script-editor">
+            <label for="scriptInput">Script text
+              <textarea id="scriptInput" spellcheck="false">Hey everyone,
+
+Thanks for tuning in today. I wanted to share a quick update straight from the iPad teleprompter I built.
+
+Remember to smile, slow down, and keep your energy up!</textarea>
+            </label>
+          </div>
+          <div class="prompt-controls">
+            <button id="toggleScroll" class="primary">Play scroll</button>
+            <button id="resetScroll">Reset</button>
+            <button id="mirrorToggle">Mirror text</button>
+            <label>Speed
+              <input id="speed" type="range" min="0.1" max="4" step="0.1" value="1" />
+            </label>
+          </div>
+        </div>
+        <p class="hint">
+          Run this page fullscreen on the iPad, dim the screen slightly, and keep your gaze near the lens for natural
+          eye contact.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Preview Modal -->
+  <div class="preview-modal" id="previewModal">
+    <div class="preview-container">
+      <div class="preview-header">📹 Camera Preview</div>
+      <div class="preview-video-wrap">
+        <video id="previewVideo" autoplay playsinline muted></video>
+      </div>
+      <div class="preview-script" id="previewScript">
+        <strong>Script:</strong> <span id="previewScriptText"></span>
+      </div>
+      <div class="preview-buttons">
+        <button id="cancelPreview">Cancel</button>
+        <button id="confirmRecord" class="primary">✓ Go Full Screen</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const scriptInput = document.getElementById('scriptInput');
+    const teleprompter = document.getElementById('teleprompter');
+    const teleprompterText = document.getElementById('teleprompterText');
+    const toggleScrollBtn = document.getElementById('toggleScroll');
+    const resetScrollBtn = document.getElementById('resetScroll');
+    const mirrorToggleBtn = document.getElementById('mirrorToggle');
+    const speedInput = document.getElementById('speed');
+    const timestamp = document.getElementById('timestamp');
+    const countdownEl = document.getElementById('countdown');
+    const dock = document.getElementById('controlDock');
+    const dockToggle = document.getElementById('dockToggle');
+    const dockToggleLabel = dockToggle ? dockToggle.querySelector('.dock-toggle-label') : null;
+
+    let scrollPosition = 0;
+    let isScrolling = false;
+    let lastFrameTime = 0;
+    let countdownActive = false;
+    let dockAutoCollapsed = false;
+    let currentLang = 'en';
+
+    // Translation strings
+    const translations = {
+      en: {
+        showControls: 'Show controls',
+        hideControls: 'Hide controls',
+        teleprompterStudio: 'Teleprompter Studio · Last refreshed:',
+        timer: 'Timer:',
+        standby: 'Standby',
+        cameraLive: 'Camera live',
+        previewMode: 'Preview mode',
+        recording: 'Recording',
+        getReady: 'Get ready',
+        processingClip: 'Processing clip',
+        readyToDownload: 'Ready to download',
+        clipSaved: 'Clip saved',
+        cameraBlocked: 'Camera blocked',
+        startCamera: 'Start camera',
+        flipCamera: 'Flip camera',
+        startRecording: 'Start recording',
+        stopRecording: 'Stop recording',
+        downloadClip: 'Download clip',
+        scriptText: 'Script text',
+        playScroll: 'Play scroll',
+        pauseScroll: 'Pause scroll',
+        reset: 'Reset',
+        mirrorText: 'Mirror text',
+        unmirrorText: 'Unmirror text',
+        speed: 'Speed',
+        hint: 'Run this page fullscreen on the iPad, dim the screen slightly, and keep your gaze near the lens for natural eye contact.',
+        cameraPreview: '📹 Camera Preview',
+        script: 'Script:',
+        cancel: 'Cancel',
+        goFullScreen: '✓ Go Full Screen',
+        floatingStop: '⏹ Stop Recording',
+        share: 'Share video',
+        sharing: 'Sharing...',
+        langBtn: 'EN / 中文'
+      },
+      zh: {
+        showControls: '顯示控制',
+        hideControls: '隱藏控制',
+        teleprompterStudio: '提詞器工作室 · 上次更新:',
+        timer: '計時:',
+        standby: '待機',
+        cameraLive: '鏡頭啟動',
+        previewMode: '預覽模式',
+        recording: '錄製中',
+        getReady: '準備中',
+        processingClip: '處理影片中',
+        readyToDownload: '可以下載',
+        clipSaved: '影片已保存',
+        cameraBlocked: '鏡頭被封鎖',
+        startCamera: '開啟鏡頭',
+        flipCamera: '切換鏡頭',
+        startRecording: '開始錄製',
+        stopRecording: '停止錄製',
+        downloadClip: '下載影片',
+        scriptText: '講稿文字',
+        playScroll: '開始滾動',
+        pauseScroll: '暫停滾動',
+        reset: '重置',
+        mirrorText: '鏡像文字',
+        unmirrorText: '取消鏡像',
+        speed: '速度',
+        hint: '在 iPad 上全螢幕運行此頁面，將螢幕稍微調暗，並將視線保持在鏡頭附近以獲得自然的眼神接觸。',
+        cameraPreview: '📹 鏡頭預覽',
+        script: '講稿:',
+        cancel: '取消',
+        goFullScreen: '✓ 全螢幕',
+        floatingStop: '⏹ 停止錄製',
+        share: '分享影片',
+        sharing: '分享中...',
+        langBtn: '中文 / EN'
+      }
+    };
+
+    const langToggle = document.getElementById('langToggle');
+    const startCameraBtn = document.getElementById('startCamera');
+    const flipCameraBtn = document.getElementById('flipCamera');
+    const recordBtn = document.getElementById('recordBtn');
+    const stopRecordBtn = document.getElementById('stopRecordBtn');
+    const downloadBtn = document.getElementById('downloadRecording');
+    const shareBtn = document.getElementById('shareBtn');
+    const previewHeader = document.querySelector('.preview-header');
+    const previewModal = document.getElementById('previewModal');
+    const previewVideo = document.getElementById('previewVideo');
+    const previewScriptText = document.getElementById('previewScriptText');
+    const cancelPreviewBtn = document.getElementById('cancelPreview');
+    const confirmRecordBtn = document.getElementById('confirmRecord');
+    const floatingStopBtn = document.getElementById('floatingStopBtn');
+    const pipCamera = document.getElementById('pipCamera');
+    const pipVideo = document.getElementById('pipVideo');
+    const speedLabel = (speedInput && speedInput.parentElement) || Array.from(document.querySelectorAll('label')).find(l => l.textContent.includes('Speed') || l.textContent.includes('速度'));
+    const scriptLabel = document.querySelector('label[for="scriptInput"]');
+    const hintEl = document.querySelector('.hint');
+
+    const applyTranslations = () => {
+      const t = translations[currentLang];
+      const previewScriptLabel = document.querySelector('#previewScript strong');
+
+      if (langToggle) langToggle.textContent = t.langBtn;
+      if (dockToggleLabel) dockToggleLabel.textContent = dock.classList.contains('collapsed') ? t.showControls : t.hideControls;
+      if (startCameraBtn) startCameraBtn.textContent = t.startCamera;
+      if (flipCameraBtn) flipCameraBtn.textContent = t.flipCamera;
+      if (recordBtn) recordBtn.textContent = t.startRecording;
+      if (stopRecordBtn) stopRecordBtn.textContent = t.stopRecording;
+      if (downloadBtn) downloadBtn.textContent = t.downloadClip;
+      if (toggleScrollBtn) toggleScrollBtn.textContent = isScrolling ? t.pauseScroll : t.playScroll;
+      if (resetScrollBtn) resetScrollBtn.textContent = t.reset;
+      if (mirrorToggleBtn) mirrorToggleBtn.textContent = teleprompter.classList.contains('mirrored') ? t.unmirrorText : t.mirrorText;
+      if (speedLabel && speedLabel.childNodes.length > 0) speedLabel.childNodes[0].textContent = t.speed;
+      if (scriptLabel && scriptLabel.childNodes.length > 0) scriptLabel.childNodes[0].textContent = t.scriptText;
+      if (hintEl) hintEl.textContent = t.hint;
+      if (previewHeader) previewHeader.textContent = t.cameraPreview;
+      if (previewScriptLabel) previewScriptLabel.textContent = t.script;
+      if (cancelPreviewBtn) cancelPreviewBtn.textContent = t.cancel;
+      if (confirmRecordBtn) confirmRecordBtn.textContent = t.goFullScreen;
+      if (floatingStopBtn) floatingStopBtn.textContent = t.floatingStop;
+      if (shareBtn) shareBtn.textContent = t.share;
+    };
+
+    applyTranslations();
+
+    langToggle.addEventListener('click', () => {
+      currentLang = currentLang === 'en' ? 'zh' : 'en';
+      applyTranslations();
+    });
+
+    const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+    const renderScript = () => {
+      const lines = scriptInput.value.trim().split(/\n+/).filter(Boolean);
+      teleprompterText.innerHTML = lines.map(line => `<p>${line}</p>`).join('');
+      scrollPosition = 0;
+      teleprompterText.style.transform = 'translateY(0)';
+    };
+
+    const setDockExpanded = expanded => {
+      if (expanded) {
+        dock.classList.remove('collapsed');
+      } else {
+        dock.classList.add('collapsed');
+      }
+      dockToggleLabel.textContent = expanded ? 'Hide controls' : 'Show controls';
+      dockToggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    };
+
+    setDockExpanded(true);
+
+    dockToggle.addEventListener('click', () => {
+      const expanded = dock.classList.contains('collapsed');
+      setDockExpanded(expanded);
+      dockAutoCollapsed = false;
+    });
+
+    const runCountdown = async () => {
+      countdownActive = true;
+      countdownEl.classList.add('visible');
+      const sequence = ['3', '2', '1'];
+      for (const value of sequence) {
+        countdownEl.textContent = value;
+        await wait(800);
+      }
+      countdownEl.textContent = 'Go!';
+      await wait(400);
+      countdownEl.classList.remove('visible');
+      countdownActive = false;
+    };
+
+    const animateScroll = time => {
+      if (isScrolling) {
+        if (lastFrameTime) {
+          const delta = time - lastFrameTime;
+          const pixelsPerFrame = parseFloat(speedInput.value) * 0.4 * (delta / 16);
+          scrollPosition += pixelsPerFrame;
+          const maxScroll = Math.max(0, teleprompterText.offsetHeight - teleprompter.offsetHeight);
+          if (scrollPosition >= maxScroll) {
+            scrollPosition = maxScroll;
+            isScrolling = false;
+            toggleScrollBtn.textContent = 'Play scroll';
+          }
+        }
+        teleprompterText.style.transform = `translateY(${-scrollPosition}px)`;
+      }
+      lastFrameTime = time;
+      requestAnimationFrame(animateScroll);
+    };
+
+    toggleScrollBtn.addEventListener('click', () => {
+      isScrolling = !isScrolling;
+      toggleScrollBtn.textContent = isScrolling ? 'Pause scroll' : 'Play scroll';
+      if (!isScrolling) {
+        lastFrameTime = 0;
+      }
+    });
+
+    resetScrollBtn.addEventListener('click', () => {
+      scrollPosition = 0;
+      teleprompterText.style.transform = 'translateY(0)';
+      isScrolling = false;
+      toggleScrollBtn.textContent = 'Play scroll';
+    });
+
+    mirrorToggleBtn.addEventListener('click', () => {
+      teleprompter.classList.toggle('mirrored');
+      mirrorToggleBtn.textContent = teleprompter.classList.contains('mirrored') ? 'Unmirror text' : 'Mirror text';
+    });
+
+    scriptInput.addEventListener('input', () => {
+      renderScript();
+    });
+
+    renderScript();
+    requestAnimationFrame(animateScroll);
+    if (timestamp) timestamp.textContent = new Date().toLocaleString();
+
+    // Camera + recording setup
+    const preview = document.getElementById('cameraPreview');
+    const statusBadge = document.getElementById('statusBadge');
+    const timerEl = document.getElementById('timer');
+
+    let stream;
+    let recorder;
+    let recordedChunks = [];
+    let facingMode = 'user';
+    let mimeType = '';
+    let timerInterval;
+    let startTime = null;
+
+    // Status key to translation key mapping
+    const statusKeyMap = {
+      'Standby': 'standby',
+      'Camera live': 'cameraLive',
+      'Preview mode': 'previewMode',
+      'Recording': 'recording',
+      'Get ready': 'getReady',
+      'Processing clip': 'processingClip',
+      'Ready to download': 'readyToDownload',
+      'Clip saved': 'clipSaved',
+      'Camera blocked': 'cameraBlocked'
+    };
+
+    const updateStatus = (text, state) => {
+      const key = statusKeyMap[text];
+      const translatedText = key ? translations[currentLang][key] : text;
+      statusBadge.textContent = translatedText;
+      statusBadge.classList.remove('recording');
+      if (state === 'recording') {
+        statusBadge.classList.add('recording');
+      }
+    };
+
+    const setDownloadEnabled = enabled => {
+      if (enabled) {
+        console.log("Enabling share/download buttons. navigator.share exists:", !!navigator.share);
+        downloadBtn.classList.remove('disabled');
+        downloadBtn.setAttribute('aria-disabled', 'false');
+
+        // Check if we are in a secure context (HTTPS) or localhost
+        const isSecure = window.isSecureContext;
+        if (navigator.share && isSecure) {
+          shareBtn.classList.remove('disabled');
+          shareBtn.disabled = false;
+          shareBtn.title = "";
+        } else {
+          shareBtn.classList.add('disabled');
+          shareBtn.disabled = true;
+          const msg = isSecure ? "Share not supported" : "Share requires HTTPS";
+          shareBtn.title = msg;
+          console.warn("Share API disabled:", msg);
+        }
+      } else {
+        downloadBtn.classList.add('disabled');
+        downloadBtn.setAttribute('aria-disabled', 'true');
+        downloadBtn.removeAttribute('href');
+        downloadBtn.removeAttribute('download');
+        shareBtn.classList.add('disabled');
+        shareBtn.disabled = true;
+      }
+    };
+
+    const stopTracks = () => {
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+        stream = null;
+      }
+    };
+
+    const initCamera = async () => {
+      try {
+        stopTracks();
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode },
+          audio: true,
+        });
+        // Show in small preview modal first
+        previewVideo.srcObject = stream;
+        previewScriptText.textContent = scriptInput.value.trim().substring(0, 200) + (scriptInput.value.length > 200 ? '...' : '');
+        previewModal.classList.add('visible');
+        recordBtn.disabled = true;
+        flipCameraBtn.disabled = false;
+        updateStatus('Preview mode');
+      } catch (err) {
+        console.error(err);
+        updateStatus('Camera blocked', 'error');
+        alert('Please allow camera + microphone access in Safari settings.');
+      }
+    };
+
+    const formatTime = ms => {
+      const total = Math.floor(ms / 1000);
+      const minutes = String(Math.floor(total / 60)).padStart(2, '0');
+      const seconds = String(total % 60).padStart(2, '0');
+      return `${minutes}:${seconds}`;
+    };
+
+    const recTimeOverlay = document.getElementById('recTime');
+    const recordingTimerOverlay = document.getElementById('recordingTimerOverlay');
+
+    const startTimer = () => {
+      startTime = Date.now();
+      timerEl.textContent = '00:00';
+      recTimeOverlay.textContent = '00:00';
+      recordingTimerOverlay.classList.add('visible');
+      timerInterval = setInterval(() => {
+        const elapsed = formatTime(Date.now() - startTime);
+        timerEl.textContent = elapsed;
+        recTimeOverlay.textContent = elapsed;
+      }, 200);
+    };
+
+    const stopTimer = () => {
+      clearInterval(timerInterval);
+      timerInterval = null;
+      recordingTimerOverlay.classList.remove('visible');
+    };
+
+    startCameraBtn.addEventListener('click', initCamera);
+
+    flipCameraBtn.addEventListener('click', () => {
+      facingMode = facingMode === 'user' ? 'environment' : 'user';
+      initCamera();
+    });
+
+    const pickMimeType = () => {
+      const types = [
+        'video/mp4;codecs="h264,aac"',
+        'video/mp4;codecs="avc1.42E01E,mp4a.40.2"',
+        'video/mp4',
+        'video/webm;codecs=vp9,opus',
+        'video/webm;codecs=vp8,opus',
+        'video/webm'
+      ];
+      for (const t of types) {
+        if (MediaRecorder.isTypeSupported(t)) {
+          console.log("Selected mimeType:", t);
+          return t;
+        }
+      }
+      return '';
+    };
+
+    // showPreviewModal logic
+    const showPreviewModal = () => {
+      previewVideo.srcObject = stream;
+      previewScriptText.textContent = scriptInput.value.trim().substring(0, 200) + (scriptInput.value.length > 200 ? '...' : '');
+      previewModal.classList.add('visible');
+    };
+
+    const hidePreviewModal = () => {
+      previewModal.classList.remove('visible');
+    };
+
+    const goFullScreen = () => {
+      // Move stream to main preview and pip camera
+      preview.srcObject = stream;
+      pipVideo.srcObject = stream;
+      pipCamera.classList.remove('hidden');
+      previewVideo.srcObject = null;
+      hidePreviewModal();
+      recordBtn.disabled = false;
+      updateStatus('Camera live');
+    };
+
+    cancelPreviewBtn.addEventListener('click', () => {
+      hidePreviewModal();
+      // Stop camera if user cancels
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+        stream = null;
+      }
+      preview.srcObject = null;
+      previewVideo.srcObject = null;
+      pipVideo.srcObject = null;
+      pipCamera.classList.add('hidden');
+      recordBtn.disabled = true;
+      updateStatus('Standby');
+    });
+
+    // Confirm button now goes to full screen view
+    confirmRecordBtn.addEventListener('click', goFullScreen);
+
+    recordBtn.addEventListener('click', async () => {
+      if (!stream) {
+        alert('Start the camera first.');
+        return;
+      }
+      if (countdownActive) {
+        return;
+      }
+
+      mimeType = pickMimeType();
+      try {
+        recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      } catch (err) {
+        console.error(err);
+        alert('Recording not supported in this browser.');
+        return;
+      }
+      recordedChunks = [];
+      recorder.ondataavailable = e => {
+        if (e.data?.size) {
+          console.log("Chunk received, size:", e.data.size);
+          recordedChunks.push(e.data);
+        }
+      };
+      recorder.onstop = () => {
+        if (!recordedChunks.length) {
+          setDownloadEnabled(false);
+          if (dockAutoCollapsed) {
+            setDockExpanded(true);
+            dockAutoCollapsed = false;
+          }
+          return;
+        }
+        const blob = new Blob(recordedChunks, { type: mimeType || 'video/mp4' });
+        console.log("Recording stopped. Blob size:", blob.size, "Type:", blob.type);
+        const url = URL.createObjectURL(blob);
+        downloadBtn.href = url;
+        const extension = (blob.type.includes('mp4')) ? 'mp4' : 'webm';
+        downloadBtn.download = `teleprompter-${Date.now()}.${extension}`;
+        setDownloadEnabled(true);
+        updateStatus('Ready to download');
+        if (dockAutoCollapsed) {
+          setDockExpanded(true);
+          dockAutoCollapsed = false;
+        }
+      };
+      recordBtn.disabled = true;
+      stopRecordBtn.disabled = true;
+      setDownloadEnabled(false);
+      updateStatus('Get ready');
+      const wasCollapsed = dock.classList.contains('collapsed');
+      dockAutoCollapsed = !wasCollapsed;
+      setDockExpanded(false);
+      await runCountdown();
+      recorder.start();
+      startTimer();
+      // Auto-start teleprompter scroll when recording begins
+      scrollPosition = 0;
+      teleprompterText.style.transform = 'translateY(0)';
+      isScrolling = true;
+      toggleScrollBtn.textContent = 'Pause scroll';
+      updateStatus('Recording', 'recording');
+      stopRecordBtn.disabled = false;
+      // Show floating stop button
+      floatingStopBtn.classList.add('visible');
+    });
+
+    // Stop recording logic
+    const stopRecording = () => {
+      if (recorder && recorder.state !== 'inactive') {
+        recorder.stop();
+      }
+      stopTimer();
+      // Stop teleprompter scroll when recording stops
+      isScrolling = false;
+      toggleScrollBtn.textContent = 'Play scroll';
+      recordBtn.disabled = false;
+      stopRecordBtn.disabled = true;
+      setDownloadEnabled(false);
+      updateStatus('Processing clip');
+      // Hide floating stop button
+      floatingStopBtn.classList.remove('visible');
+    };
+
+    stopRecordBtn.addEventListener('click', stopRecording);
+    floatingStopBtn.addEventListener('click', stopRecording);
+
+    downloadBtn.addEventListener('click', () => {
+      if (!downloadBtn.classList.contains('disabled')) {
+        updateStatus('Clip saved');
+      }
+    });
+
+    shareBtn.addEventListener('click', async () => {
+      if (!recordedChunks.length) return;
+
+      const blob = new Blob(recordedChunks, { type: mimeType || 'video/mp4' });
+      const extension = (blob.type.includes('mp4')) ? 'mp4' : 'webm';
+      const file = new File([blob], `teleprompter-${Date.now()}.${extension}`, { type: blob.type });
+
+      console.log("Attempting to share file:", file.name, "Type:", file.type);
+
+      if (navigator.share && window.isSecureContext) {
+        try {
+          shareBtn.textContent = translations[currentLang].sharing;
+          shareBtn.disabled = true;
+          await navigator.share({
+            files: [file],
+            title: 'Teleprompter Recording',
+            text: 'Check out my teleprompter recording!'
+          });
+        } catch (err) {
+          if (err.name !== 'AbortError') {
+            console.error('Share failed:', err);
+            alert('Sharing failed. Error: ' + err.message + '. Please try downloading instead.');
+          }
+        } finally {
+          shareBtn.textContent = translations[currentLang].share;
+          shareBtn.disabled = false;
+        }
+      } else {
+        const msg = !window.isSecureContext ? "Sharing requires HTTPS (or localhost)." : "Sharing is not supported in this browser.";
+        alert(msg);
+      }
+    });
+
+    window.addEventListener('beforeunload', () => {
+      stopTracks();
+    });
+  </script>
+</body>
+
+</html>
